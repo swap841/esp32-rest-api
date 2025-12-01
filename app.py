@@ -1,81 +1,60 @@
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
 
-# Device Status Storage
+# ----- Device states -----
 status = {
     "light1": "OFF",
     "light2": "OFF",
     "light3": "OFF",
     "light4": "OFF",
-    "fanSpeed": 0
+    "fanSpeed": 0,  # 0 to 5
+    "heater": "OFF"
 }
 
-
+# Home endpoint
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"message": "ESP32 REST API Running"})
 
 
-# MAIN CONTROL ENDPOINT
-@app.route("/set", methods=["POST"])
-def set_device():
-    data = request.get_json()
-
-    # SAFETY CHECK
-    if data is None:
-        return jsonify({"error": "No JSON received"}), 400
-
-    # --------------------------
-    # FAN SPEED HANDLING
-    # --------------------------
-    if data.get("cmd") == "FAN":
-        speed = int(data.get("speed", 0))
-
-        if speed < 0 or speed > 5:
-            return jsonify({"error": "Invalid speed (0–5 only)"}), 400
-
-        status["fanSpeed"] = speed
-
-        print(f"Fan Speed Updated → {speed}")
-
-        return jsonify({
-            "status": "OK",
-            "device": "fan",
-            "fanSpeed": speed
-        })
-
-    # --------------------------
-    # LIGHT HANDLING
-    # --------------------------
-    device = data.get("device")
-    state = data.get("state")
-
-    if device in ["light1", "light2", "light3", "light4"]:
-        if state not in ["ON", "OFF"]:
-            return jsonify({"error": "State must be ON or OFF"}), 400
-
-        status[device] = state
-
-        print(f"{device} → {state}")
-
-        return jsonify({
-            "status": "OK",
-            "device": device,
-            "state": state
-        })
-
-    return jsonify({"error": "Invalid command"}), 400
-
-
-# STATUS PAGE (OPTIONAL)
+# Get current status
 @app.route("/status", methods=["GET"])
 def get_status():
     return jsonify(status)
 
 
-# RUN SERVER
+# Update device status
+@app.route("/set", methods=["POST"])
+def set_device():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No JSON received"}), 400
+
+    # ----- Lights -----
+    for i in range(1, 5):
+        key = f"light{i}"
+        if key in data and data[key] in ["ON", "OFF"]:
+            status[key] = data[key]
+
+    # ----- Fan -----
+    if "fanSpeed" in data:
+        speed = int(data["fanSpeed"])
+        if speed < 0: speed = 0
+        if speed > 5: speed = 5
+        status["fanSpeed"] = speed
+
+    # ----- Heater -----
+    if "heater" in data and data["heater"] in ["ON", "OFF"]:
+        status["heater"] = data["heater"]
+
+    return jsonify({"status": "OK", "current": status})
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    # Render automatically sets PORT via environment variable
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
